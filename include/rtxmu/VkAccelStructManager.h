@@ -122,6 +122,10 @@ namespace rtxmu
 
         Stats GetCompactionPoolMemoryStats();
 
+        Stats GetScratchPoolMemoryStats();
+
+        Stats GetUpdatePoolMemoryStats();
+
         static void logCallbackFunction(const char* msg);
 
     private:

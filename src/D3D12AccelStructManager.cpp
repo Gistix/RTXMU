@@ -614,4 +614,14 @@ namespace rtxmu
     {
         return m_compactionPool->getStats();
     }
+
+    Stats DxAccelStructManager::GetScratchPoolMemoryStats()
+    {
+        return m_scratchPool ? m_scratchPool->getStats() : Stats{};
+    }
+
+    Stats DxAccelStructManager::GetUpdatePoolMemoryStats()
+    {
+        return m_updatePool ? m_updatePool->getStats() : Stats{};
+    }
 }

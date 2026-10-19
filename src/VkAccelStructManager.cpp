@@ -665,4 +665,14 @@ namespace rtxmu
     {
         return m_compactionPool->getStats();
     }
+
+    Stats VkAccelStructManager::GetScratchPoolMemoryStats()
+    {
+        return m_scratchPool ? m_scratchPool->getStats() : Stats{};
+    }
+
+    Stats VkAccelStructManager::GetUpdatePoolMemoryStats()
+    {
+        return m_updatePool ? m_updatePool->getStats() : Stats{};
+    }
 }
