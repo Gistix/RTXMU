@@ -476,7 +476,10 @@ namespace rtxmu
 
     uint64_t VkAccelStructManager::GetInitialAccelStructSize(const uint64_t accelStructId)
     {
+        if (!IsValid(accelStructId)) return 0;
         VkAccelerationStructure* accelStruct = m_asBufferBuildQueue[accelStructId];
+        if (!accelStruct || !accelStruct->resultGpuMemory.subBlock)
+            return accelStruct ? accelStruct->resultSize : 0;
 
         return accelStruct->resultGpuMemory.subBlock->getSize() -
                accelStruct->resultGpuMemory.subBlock->getUnusedSize();
@@ -484,7 +487,10 @@ namespace rtxmu
 
     uint64_t VkAccelStructManager::GetCompactedAccelStructSize(const uint64_t accelStructId)
     {
+        if (!IsValid(accelStructId)) return 0;
         VkAccelerationStructure* accelStruct = m_asBufferBuildQueue[accelStructId];
+        if (!accelStruct || !accelStruct->compactionGpuMemory.subBlock)
+            return accelStruct ? accelStruct->compactionSize : 0;
 
         return accelStruct->compactionGpuMemory.subBlock->getSize() -
                accelStruct->compactionGpuMemory.subBlock->getUnusedSize();
