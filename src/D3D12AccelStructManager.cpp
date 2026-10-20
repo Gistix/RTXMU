@@ -110,7 +110,8 @@ namespace rtxmu
                 m_allocator.device->GetRaytracingAccelerationStructurePrebuildInfo(&asInputs[buildIndex], &prebuildInfo);
 
                 // If the previous memory stores for the acceleration structure are not adequate then reallocate
-                if (accelStruct->scratchGpuMemory.subBlock->getSize() < prebuildInfo.ScratchDataSizeInBytes ||
+                accelStruct->allowUpdate = (asInputs[buildIndex].Flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE) != 0;
+                if ((accelStruct->scratchGpuMemory.subBlock == nullptr) || (accelStruct->scratchGpuMemory.subBlock->getSize() < prebuildInfo.ScratchDataSizeInBytes) ||
                     accelStruct->resultGpuMemory.subBlock->getSize() < prebuildInfo.ResultDataMaxSizeInBytes)
                 {
 
@@ -128,7 +129,7 @@ namespace rtxmu
                     accelStruct->resultSize = accelStruct->resultGpuMemory.subBlock->getSize();
 
                     // Double check to make sure memory is large enough
-                    if (accelStruct->scratchGpuMemory.subBlock->getSize() < prebuildInfo.ScratchDataSizeInBytes ||
+                    if ((accelStruct->scratchGpuMemory.subBlock == nullptr) || (accelStruct->scratchGpuMemory.subBlock->getSize() < prebuildInfo.ScratchDataSizeInBytes) ||
                         accelStruct->resultGpuMemory.subBlock->getSize() < prebuildInfo.ResultDataMaxSizeInBytes)
                     {
                         if (Logger::isEnabled(Level::FATAL))
@@ -145,7 +146,8 @@ namespace rtxmu
                     (accelStruct->scratchGpuMemory.subBlock->isFree() == true))
                 {
                     accelStruct->scratchGpuMemory =
-                        m_scratchPool->allocate(accelStruct->scratchGpuMemory.subBlock->getSize());
+                        m_scratchPool->allocate(prebuildInfo.ScratchDataSizeInBytes);
+                    accelStruct->scratchSize = accelStruct->scratchGpuMemory.subBlock->getSize();
                 }
 
                 buildDesc.ScratchAccelerationStructureData = D3D12Block::getGPUVA(accelStruct->scratchGpuMemory.block,
@@ -216,6 +218,8 @@ namespace rtxmu
                                                                               accelStruct->scratchGpuMemory.offset);
             buildDesc.DestAccelerationStructureData    = D3D12Block::getGPUVA(accelStruct->resultGpuMemory.block,
                                                                               accelStruct->resultGpuMemory.offset);
+
+            accelStruct->allowUpdate = (asInputs[buildIndex].Flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE) != 0;
 
             // Only perform compaction of the build inputs that include compaction
             if (asInputs[buildIndex].Flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION)
@@ -374,6 +378,42 @@ namespace rtxmu
         {
             PostBuildRelease(accelStructId);
             m_asBufferBuildQueue[accelStructId]->readyToFree = true;
+        }
+    }
+
+    void DxAccelStructManager::ReleaseBuildScratch(const uint64_t accelStructId)
+    {
+        if (!IsValid(accelStructId))
+            return;
+
+        DxAccelerationStructure* accelStruct = m_asBufferBuildQueue[accelStructId];
+        if (!accelStruct)
+            return;
+
+        if (!accelStruct->allowUpdate)
+        {
+            if ((accelStruct->scratchGpuMemory.subBlock != nullptr) &&
+                (accelStruct->scratchGpuMemory.subBlock->isFree() == false))
+            {
+                m_scratchPool->free(accelStruct->scratchGpuMemory.subBlock);
+                accelStruct->scratchGpuMemory.subBlock = nullptr;
+
+                if (Logger::isEnabled(Level::DBG))
+                {
+                    char buf[128];
+                    snprintf(buf, sizeof buf, "RTXMU ReleaseBuildScratch %" PRIu64 "\n", accelStructId);
+                    Logger::log(Level::DBG, buf);
+                }
+            }
+        }
+    }
+
+    void DxAccelStructManager::ReleaseBuildScratch(const std::vector<uint64_t>& accelStructIds)
+    {
+        std::lock_guard<std::mutex> guard(m_threadSafeLock);
+        for (const uint64_t accelStructId : accelStructIds)
+        {
+            ReleaseBuildScratch(accelStructId);
         }
     }
 

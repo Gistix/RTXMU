@@ -44,6 +44,7 @@ namespace rtxmu
         bool isCompacted         = false;
         bool requestedCompaction = false;
         bool readyToFree         = false;
+        bool allowUpdate         = false;
     };
 
     template<typename T>

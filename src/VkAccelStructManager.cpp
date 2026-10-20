@@ -112,7 +112,8 @@ namespace rtxmu
                 m_allocator.device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, &geomInfos[buildIndex], maxPrimitiveCounts[buildIndex], &buildSizeInfo, VkBlock::getDispatchLoader());
 
                 // If the previous memory stores for the acceleration structure are not adequate then reallocate
-                if (accelStruct->scratchGpuMemory.subBlock->getSize() < buildSizeInfo.buildScratchSize ||
+                accelStruct->allowUpdate = (geomInfos[buildIndex].flags & vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate) != vk::BuildAccelerationStructureFlagBitsKHR(0);
+                if ((accelStruct->scratchGpuMemory.subBlock == nullptr) || (accelStruct->scratchGpuMemory.subBlock->getSize() < buildSizeInfo.buildScratchSize) ||
                     accelStruct->resultGpuMemory.subBlock->getSize() < buildSizeInfo.accelerationStructureSize)
                 {
                     if (Logger::isEnabled(Level::WARN))
@@ -129,7 +130,7 @@ namespace rtxmu
                     accelStruct->resultSize = accelStruct->resultGpuMemory.subBlock->getSize();
 
                     // Double check to make sure memory is large enough
-                    if (accelStruct->scratchGpuMemory.subBlock->getSize() < buildSizeInfo.buildScratchSize ||
+                    if ((accelStruct->scratchGpuMemory.subBlock == nullptr) || (accelStruct->scratchGpuMemory.subBlock->getSize() < buildSizeInfo.buildScratchSize) ||
                         accelStruct->resultGpuMemory.subBlock->getSize() < buildSizeInfo.accelerationStructureSize)
                     {
                         if (Logger::isEnabled(Level::FATAL))
@@ -159,7 +160,8 @@ namespace rtxmu
                     (accelStruct->scratchGpuMemory.subBlock->isFree() == true))
                 {
                     accelStruct->scratchGpuMemory =
-                        m_scratchPool->allocate(accelStruct->scratchGpuMemory.subBlock->getSize());
+                        m_scratchPool->allocate(buildSizeInfo.buildScratchSize);
+                    accelStruct->scratchSize = accelStruct->scratchGpuMemory.subBlock->getSize();
                 }
 
                 geomInfo.scratchData.deviceAddress = VkBlock::getDeviceAddress(m_allocator.device, accelStruct->scratchGpuMemory.block, accelStruct->scratchGpuMemory.offset);
@@ -223,7 +225,8 @@ namespace rtxmu
             auto asHandle = m_allocator.device.createAccelerationStructureKHR(asCreateInfo, nullptr, VkBlock::getDispatchLoader());
             accelStruct->resultGpuMemory.block.m_asHandle = asHandle;
 
-            if (geomInfos[buildIndex].flags & vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate)
+            accelStruct->allowUpdate = (geomInfos[buildIndex].flags & vk::BuildAccelerationStructureFlagBitsKHR::eAllowUpdate) != vk::BuildAccelerationStructureFlagBitsKHR(0);
+            if (accelStruct->allowUpdate)
             {
                 accelStruct->updateGpuMemory = m_updatePool->allocate(buildSizeInfo.updateScratchSize);
             }
@@ -414,6 +417,42 @@ namespace rtxmu
         {
             PostBuildRelease(accelStructId);
             m_asBufferBuildQueue[accelStructId]->readyToFree = true;
+        }
+    }
+
+    void VkAccelStructManager::ReleaseBuildScratch(const uint64_t accelStructId)
+    {
+        if (!IsValid(accelStructId))
+            return;
+
+        VkAccelerationStructure* accelStruct = m_asBufferBuildQueue[accelStructId];
+        if (!accelStruct)
+            return;
+
+        if (!accelStruct->allowUpdate)
+        {
+            if ((accelStruct->scratchGpuMemory.subBlock != nullptr) &&
+                (accelStruct->scratchGpuMemory.subBlock->isFree() == false))
+            {
+                m_scratchPool->free(accelStruct->scratchGpuMemory.subBlock);
+                accelStruct->scratchGpuMemory.subBlock = nullptr;
+
+                if (Logger::isEnabled(Level::DBG))
+                {
+                    char buf[128];
+                    snprintf(buf, sizeof buf, "RTXMU ReleaseBuildScratch %" PRIu64 "\n", accelStructId);
+                    Logger::log(Level::DBG, buf);
+                }
+            }
+        }
+    }
+
+    void VkAccelStructManager::ReleaseBuildScratch(const std::vector<uint64_t>& accelStructIds)
+    {
+        std::lock_guard<std::mutex> guard(m_threadSafeLock);
+        for (const uint64_t accelStructId : accelStructIds)
+        {
+            ReleaseBuildScratch(accelStructId);
         }
     }
 

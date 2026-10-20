@@ -80,6 +80,10 @@ namespace rtxmu
         // Remove all memory used in build process, while only leaving the acceleration structure buffer itself in memory
         void GarbageCollection(const std::vector<uint64_t>& accelStructIds);
 
+        // Releases scratch memory for completed builds that do not allow update
+        void ReleaseBuildScratch(const std::vector<uint64_t>& accelStructIds);
+        void ReleaseBuildScratch(const uint64_t accelStructId);
+
         // Returns GPUVA of the acceleration structure
         D3D12_GPU_VIRTUAL_ADDRESS GetAccelStructGPUVA(const uint64_t accelStructId);
 
